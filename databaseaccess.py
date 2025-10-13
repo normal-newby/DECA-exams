@@ -1,5 +1,14 @@
 from google.cloud.sql.connector import Connector
 import sqlalchemy
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+connection = os.getenv("CONNECTION")
+username = os.getenv("USER")
+password = os.getenv("PASSWORD")
+db = os.getenv("DB")
+
 
 class IAStats:
     def __init__(self, ia):
@@ -39,11 +48,11 @@ iaObjects = {ia: IAStats(ia) for ia in iaList}
 connector = Connector()
 def getconn():
     conn = connector.connect(
-        "summer-hawk-473921-i2:us-central1:exampractice",
+        connection,
         "pymysql",
-        user = "root",
-        password = "R/*kT?D3eRm5f:`z",
-        db = "exampractice"
+        user = username,
+        password = password,
+        db = db
     )
     return conn
 
