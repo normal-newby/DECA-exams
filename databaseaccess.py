@@ -61,7 +61,7 @@ pool = sqlalchemy.create_engine(
     creator = getconn,
 )
 with pool.connect() as db_conn:
-    examsets = db_conn.execute(sqlalchemy.text("SELECT * FROM ExamSets")).fetchall()
+    examsets = db_conn.execute(sqlalchemy.text("SELECT * FROM exam_sets")).fetchall()
     numexams = len(examsets)
     for row in examsets:
         print("ID:", row.id, " Cluster:", row.cluster, " Exam Name:", row.exam_name)
@@ -86,24 +86,24 @@ with pool.connect() as db_conn:
         except ValueError:
             print("Invalid input. Defaulting to 20 questions.")
             numQuestions = 20
-        result = db_conn.execute(sqlalchemy.text("SELECT * FROM Questions ORDER BY RAND() LIMIT 20")).fetchall()
+        result = db_conn.execute(sqlalchemy.text("SELECT * FROM questions ORDER BY RAND() LIMIT 20")).fetchall()
     else:
-        result = db_conn.execute(sqlalchemy.text("SELECT * FROM Questions WHERE examset_id = :id"), {"id": id}).fetchall()
+        result = db_conn.execute(sqlalchemy.text("SELECT * FROM questions WHERE examset_id = :id"), {"id": id}).fetchall()
     
     for row in result:
         print("Question number:", iaObjects.get("total").totalQuestions()+1, "\n"
               , "Question:", row.question, "\n"
-              , "Answer A:", row.answerA, "\n"
-              , "Answer B:", row.answerB, "\n"
-              , "Answer C:", row.answerC, "\n"
-              , "Answer D:", row.answerD, "\n"
+              , "Answer A:", row.answera, "\n"
+              , "Answer B:", row.answerb, "\n"
+              , "Answer C:", row.answerc, "\n"
+              , "Answer D:", row.answerd, "\n"
         )
         user_answer = input("Please enter your answer (A, B, C, or D): ").upper()
         ia_obj = iaObjects.get(row.ia)
         total_obj = iaObjects.get("total")
-        ia_obj.addQuestion(user_answer == row.correctAnswer)
-        total_obj.addQuestion(user_answer == row.correctAnswer)
-        print ("Correct the answer is " if user_answer == row.correctAnswer else "Incorrect, the correct answer is ", row.correctAnswer)
+        ia_obj.addQuestion(user_answer == row.correct_answer)
+        total_obj.addQuestion(user_answer == row.correct_answer)
+        print ("Correct the answer is " if user_answer == row.correct_answer else "Incorrect, the correct answer is ", row.correct_answer)
         print("Your current accuracy for this IA (", row.ia, ") is: ", f"{ia_obj.getAccuracy()*100:.2f}%", sep="")
         print("Your current overall accuracy is: ", f"{total_obj.getAccuracy()*100:.2f}%", sep="")
         wantToSee = True if input("Want to see the explanation and IA? (Y/N) ").upper() == "Y" else False
