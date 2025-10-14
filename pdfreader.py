@@ -15,6 +15,7 @@ db = os.getenv("DB")
 
 # dependencies: pdfplumber, cloud-sql-python-connector, sqlalchemy, pymysql
 folder = Path("./practice exams")
+
 ias = {
         "bl": "business law",
         "co": "communications",
@@ -49,7 +50,10 @@ def extractQuestions(pages):
         for j in range(num, len(pages)):
             page = pages[j]
             if search in page:
-                returnList.append(page[page.find(search) : page.find(str(i+1) + ".")].strip())
+                if not (str(i+1) + "." in page) or i==100:
+                    returnList.append(page[page.find(search) : len(page)].strip())
+                else:
+                    returnList.append(page[page.find(search) : page.find(str(i+1) + ".")].strip())
                 num = j
                 break
     return returnList
@@ -63,13 +67,24 @@ def extractAnswers(pages):
                 break
     return returnList
 def extract_answers(question): #this functions credit goes to copilot
-    matches = list(re.finditer(r'([ABCD])\.\s', question))
+    text = question
+    matches = list(re.finditer(r'([A-D])\.\s*', text))
+    if not matches:
+        return ["", "", "", ""]
+
     answer_map = {}
     for i, match in enumerate(matches):
         label = match.group(1)
         start = match.end()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(question)
-        answer_map[label] = question[start:end].strip()
+        if i + 1 < len(matches):
+            end = matches[i + 1].start()
+        else:
+            # Look for common end markers after the last answer
+            tail = text[start:]
+            stop = re.search(r'Copyright', tail)
+            end = start + stop.start() if stop else len(text)
+        answer_map[label] = text[start:end].strip()
+
     # Return answers in A, B, C, D order (empty string if missing)
     return [answer_map.get(letter, "") for letter in "ABCD"]
 for file in folder.iterdir():
@@ -83,12 +98,8 @@ for file in folder.iterdir():
                 curPage = page.page_number-1
                 break
             questionsPages.append(page.extract_text())
-        print(pdf.pages[curPage].extract_text())
         for i in range(curPage, len(pdf.pages)):
             answersPages.append(pdf.pages[i].extract_text())
-
-
-
 
     questions = extractQuestions(questionsPages)
     answers = extractAnswers(answersPages)
