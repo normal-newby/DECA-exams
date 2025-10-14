@@ -42,6 +42,22 @@ class Question:
             self.specificIA = specificIA
             self.ia = ia
             self.cluster = cluster
+
+connector = Connector()
+def getconn():
+    conn = connector.connect(
+        connection,
+        "pymysql",
+        user = username,
+        password = password,
+        db = db
+    )
+    return conn
+
+pool = sqlalchemy.create_engine(
+    "mysql+pymysql://",
+    creator = getconn,
+)
 def extractQuestions(pages):
     num  = 0
     returnList = []
@@ -136,21 +152,6 @@ for file in folder.iterdir():
 
     # add everything to database below
 
-    connector = Connector()
-    def getconn():
-        conn = connector.connect(
-            connection,
-            "pymysql",
-            user = username,
-            password = password,
-            db = db
-        )
-        return conn
-
-    pool = sqlalchemy.create_engine(
-        "mysql+pymysql://",
-        creator = getconn,
-    )
     with pool.connect() as db_conn:
         if not db_conn.execute(sqlalchemy.text("SELECT 1 FROM exam_sets WHERE cluster = :cluster AND exam_name = :exam_name"), {"cluster": cluster, "exam_name": exam_name}).fetchone():
             result = db_conn.execute(
