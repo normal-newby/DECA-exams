@@ -34,3 +34,9 @@ build/
 
 ### environment ###
 .env
+
+regextest.py
+tempDescAdder.py
+filereader.py
+.env
+practice exams
