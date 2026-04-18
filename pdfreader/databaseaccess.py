@@ -1,13 +1,9 @@
-from google.cloud.sql.connector import Connector
 import sqlalchemy
 from dotenv import load_dotenv
 import os
 
 load_dotenv()
-connection = os.getenv("CONNECTION")
-username = os.getenv("USER")
-password = os.getenv("PASSWORD")
-db = os.getenv("DB")
+db_path = os.getenv("SQLITE_DB_PATH", "./exampractice.db")
 
 
 class IAStats:
@@ -45,20 +41,11 @@ iaObjects = []
 for ia in iaList:
     iaObjects.append(IAStats(ia))
 iaObjects = {ia: IAStats(ia) for ia in iaList}
-connector = Connector()
-def getconn():
-    conn = connector.connect(
-        connection,
-        "pymysql",
-        user = username,
-        password = password,
-        db = db
-    )
-    return conn
 
+# SQLite connection pool
 pool = sqlalchemy.create_engine(
-    "mysql+pymysql://",
-    creator = getconn,
+    f"sqlite:///{db_path}",
+    echo=False
 )
 with pool.connect() as db_conn:
     examsets = db_conn.execute(sqlalchemy.text("SELECT * FROM exam_sets")).fetchall()
@@ -86,7 +73,7 @@ with pool.connect() as db_conn:
         except ValueError:
             print("Invalid input. Defaulting to 20 questions.")
             numQuestions = 20
-        result = db_conn.execute(sqlalchemy.text("SELECT * FROM questions ORDER BY RAND() LIMIT 20")).fetchall()
+        result = db_conn.execute(sqlalchemy.text("SELECT * FROM questions ORDER BY RANDOM() LIMIT :limit"), {"limit": numQuestions}).fetchall()
     else:
         result = db_conn.execute(sqlalchemy.text("SELECT * FROM questions WHERE examset_id = :id"), {"id": id}).fetchall()
     

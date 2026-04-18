@@ -1,20 +1,16 @@
 import pdfplumber
 from dotenv import load_dotenv
 import os
-from google.cloud.sql.connector import Connector
 import sqlalchemy
 from pathlib import Path
 import re
 
 # load environment variables
 load_dotenv()
-connection = os.getenv("CONNECTION")
-username = os.getenv("USER")
-password = os.getenv("PASSWORD")
-db = os.getenv("DB")
+db_path = os.getenv("SQLITE_DB_PATH")
 
-# dependencies: pdfplumber, cloud-sql-python-connector, sqlalchemy, pymysql
-folder = Path("./practice exams")
+# dependencies: pdfplumber, sqlalchemy
+folder = Path("D:\Projects\Better-answerwrite-frontend\pdfreader\practice exams")
 
 ias = {
         "bl": "business law",
@@ -43,20 +39,10 @@ class Question:
             self.ia = ia
             self.cluster = cluster
 
-connector = Connector()
-def getconn():
-    conn = connector.connect(
-        connection,
-        "pymysql",
-        user = username,
-        password = password,
-        db = db
-    )
-    return conn
-
+# SQLite connection pool
 pool = sqlalchemy.create_engine(
-    "mysql+pymysql://",
-    creator = getconn,
+    f"sqlite:///{db_path}",
+    echo=False
 )
 def extractQuestions(pages):
     num  = 0
@@ -108,7 +94,7 @@ for file in folder.iterdir():
     answersPages = []
     cluster = "Finance"
     exam_name = file.name
-    with pdfplumber.open(f"./practice exams/{exam_name}") as pdf: #pdf file
+    with pdfplumber.open(f"D:\Projects\Better-answerwrite-frontend\pdfreader\practice exams\{exam_name}") as pdf: #pdf file
         for page in pdf.pages:
             if ("FINANCE CLUSTER EXAM—KEY" in page.extract_text()):
                 curPage = page.page_number-1
