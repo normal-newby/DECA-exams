@@ -8,9 +8,10 @@ import re
 # load environment variables
 load_dotenv()
 db_path = os.getenv("SQLITE_DB_PATH")
+folder_path = os.getenv("FOLDER_PATH")
 
 # dependencies: pdfplumber, sqlalchemy
-folder = Path("D:\Projects\Better-answerwrite-frontend\pdfreader\practice exams")
+folder = Path(folder_path)
 
 ias = {
         "bl": "business law",
@@ -94,7 +95,7 @@ for file in folder.iterdir():
     answersPages = []
     cluster = "Finance"
     exam_name = file.name
-    with pdfplumber.open(f"D:\Projects\Better-answerwrite-frontend\pdfreader\practice exams\{exam_name}") as pdf: #pdf file
+    with pdfplumber.open(f"{folder_path}\\{exam_name}") as pdf: #pdf file
         for page in pdf.pages:
             if ("FINANCE CLUSTER EXAM—KEY" in page.extract_text()):
                 curPage = page.page_number-1
