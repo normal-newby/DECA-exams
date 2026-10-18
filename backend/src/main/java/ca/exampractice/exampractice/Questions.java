@@ -1,6 +1,7 @@
 package ca.exampractice.exampractice;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -32,4 +33,10 @@ public class Questions {
     @JoinColumn(name = "examset_id")
     @JsonIgnore
     private Exam exam;
+
+    /** Lets the UI show which exam a question came from when practising across all exams. */
+    @JsonProperty("examName")
+    public String getExamName() {
+        return exam == null ? null : exam.getExamName();
+    }
 }

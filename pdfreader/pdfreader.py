@@ -1,179 +1,90 @@
-import pdfplumber
-from dotenv import load_dotenv
+"""Import every exam PDF in a folder into the SQLite question bank.
+
+Usage:
+    python pdfreader.py [FOLDER] [--cluster Finance] [--dry-run]
+
+FOLDER defaults to FOLDER_PATH and the database to SQLITE_DB_PATH (both read from pdfreader/.env).
+Exams already in the DB (same cluster + file name) are skipped.
+"""
+import argparse
 import os
-import sqlalchemy
 from pathlib import Path
-import re
 
-# load environment variables
-load_dotenv()
-db_path = os.getenv("SQLITE_DB_PATH")
-folder_path = os.getenv("FOLDER_PATH")
+import sqlalchemy
+from dotenv import load_dotenv
 
-# dependencies: pdfplumber, sqlalchemy
-folder = Path(folder_path)
+from exam_parser import parse_pdf
 
-ias = {
-        "bl": "business law",
-        "co": "communications",
-        "cr": "customer relations",
-        "ec": "econ",
-        "ei": "emotional intelligence",
-        "en": "entrepreneurship",
-        "fi": "financial analysis",
-        "fm": "financial-information management",
-        "hr": "human resources management",
-        "mk": "marketing",
-        "nf": "information management",
-        "op": "operations",
-        "pd": "professional development",
-        "rm": "risk management",
-        "sm": "strategic management",
-    }
-class Question:
-        def __init__(self, question, answers, correctAnswer, description, specificIA, ia, cluster):
-            self.question = question
-            self.answers = answers
-            self.correctAnswer = correctAnswer
-            self.description = description
-            self.specificIA = specificIA
-            self.ia = ia
-            self.cluster = cluster
+SCHEMA = [
+    """CREATE TABLE IF NOT EXISTS exam_sets (
+        id integer, cluster varchar(255), exam_name varchar(255), primary key (id))""",
+    """CREATE TABLE IF NOT EXISTS questions (
+        id integer, answera varchar(255), answerb varchar(255), answerc varchar(255), answerd varchar(255),
+        cluster varchar(255), correct_answer varchar(255), description TEXT, ia TEXT, question TEXT,
+        specificia varchar(255), examset_id integer, primary key (id))""",
+]
 
-# SQLite connection pool
-pool = sqlalchemy.create_engine(
-    f"sqlite:///{db_path}",
-    echo=False
-)
-def extractQuestions(pages):
-    num  = 0
-    returnList = []
-    for i in range(1, 101):
-        search = str(i) + "."
-        for j in range(num, len(pages)):
-            page = pages[j]
-            if search in page:
-                if not (str(i+1) + "." in page) or i==100:
-                    returnList.append(page[page.find(search) : len(page)].strip())
-                else:
-                    returnList.append(page[page.find(search) : page.find(str(i+1) + ".")].strip())
-                num = j
-                break
-    return returnList
-def extractAnswers(pages):
-    returnList = []
-    for i in range(1, 101):
-        search = str(i) + "."
-        for page in pages:
-            if ((search + " A") in page) or ((search + " B") in page) or ((search + " C") in page) or ((search + " D") in page):
-                returnList.append(page[page.find(search) : page.find(str(i+1) + ".") if (page.find(str(i+1) + ".") != -1) and (page[page.find(str(i+1) + ".")+ 2].isalpha()) else None].strip())
-                break
-    return returnList
-def extract_answers(question): #this functions credit goes to copilot
-    text = question
-    matches = list(re.finditer(r'([A-D])\.\s*', text))
-    if not matches:
-        return ["", "", "", ""]
 
-    answer_map = {}
-    for i, match in enumerate(matches):
-        label = match.group(1)
-        start = match.end()
-        if i + 1 < len(matches):
-            end = matches[i + 1].start()
-        else:
-            # Look for common end markers after the last answer
-            tail = text[start:]
-            stop = re.search(r'Copyright', tail)
-            end = start + stop.start() if stop else len(text)
-        answer_map[label] = text[start:end].strip()
+def import_exam(conn, exam_name, exam):
+    exists = conn.execute(
+        sqlalchemy.text("SELECT 1 FROM exam_sets WHERE cluster = :c AND exam_name = :n"),
+        {"c": exam.cluster, "n": exam_name},
+    ).fetchone()
+    if exists:
+        return False
+    examset_id = conn.execute(
+        sqlalchemy.text("INSERT INTO exam_sets (cluster, exam_name) VALUES (:c, :n)"),
+        {"c": exam.cluster, "n": exam_name},
+    ).lastrowid
+    conn.execute(
+        sqlalchemy.text("""
+            INSERT INTO questions
+            (question, answera, answerb, answerc, answerd, correct_answer, description, specificia, ia, cluster, examset_id)
+            VALUES (:question, :a, :b, :c, :d, :correct, :description, :specific_ia, :ia, :cluster, :examset_id)
+        """),
+        [
+            {
+                "question": q.question, "a": q.answers[0], "b": q.answers[1], "c": q.answers[2], "d": q.answers[3],
+                "correct": q.correct_answer, "description": q.description, "specific_ia": q.specific_ia,
+                "ia": q.ia, "cluster": exam.cluster, "examset_id": examset_id,
+            }
+            for q in exam.questions
+        ],
+    )
+    return True
 
-    # Return answers in A, B, C, D order (empty string if missing)
-    return [answer_map.get(letter, "") for letter in "ABCD"]
-for file in folder.iterdir():
-    questionsPages = []
-    answersPages = []
-    cluster = "Finance"
-    exam_name = file.name
-    with pdfplumber.open(f"{folder_path}\\{exam_name}") as pdf: #pdf file
-        for page in pdf.pages:
-            if ("FINANCE CLUSTER EXAM—KEY" in page.extract_text()):
-                curPage = page.page_number-1
-                break
-            questionsPages.append(page.extract_text())
-        for i in range(curPage, len(pdf.pages)):
-            answersPages.append(pdf.pages[i].extract_text())
 
-    questions = extractQuestions(questionsPages)
-    answers = extractAnswers(answersPages)
+def main():
+    load_dotenv(Path(__file__).with_name(".env"))
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("folder", nargs="?", default=os.getenv("FOLDER_PATH"))
+    ap.add_argument("--cluster", help="override the cluster detected from the PDF header")
+    ap.add_argument("--db", default=os.getenv("SQLITE_DB_PATH"))
+    ap.add_argument("--dry-run", action="store_true", help="parse and report only; don't write to the DB")
+    args = ap.parse_args()
+    if not args.folder or (not args.db and not args.dry_run):
+        ap.error("set FOLDER_PATH and SQLITE_DB_PATH in pdfreader/.env or pass FOLDER and --db")
 
-    #dont touch above code it works lol###
+    engine = None if args.dry_run else sqlalchemy.create_engine(f"sqlite:///{args.db}")
+    if engine:
+        with engine.begin() as conn:
+            for stmt in SCHEMA:
+                conn.execute(sqlalchemy.text(stmt))
 
-    questionsList = []
-    for question, answer in zip(questions, answers):
+    for pdf in sorted(Path(args.folder).glob("*.pdf")):
         try:
-            qText = question[question.find(".")+1 : question.find("A.")].strip()
-            aText = extract_answers(question)
-            correctAnswer = answer[answer.find(".") + 2]
-            description = answer[answer.find(".") + 3 : answer.find("SOURCE:")].strip() #error?
-            location = answer.find("SOURCE:") + 8
-            specificIA = answer[location: location + 7].strip()
-            ia = ias.get(specificIA[0:2].lower(), "Unknown IA")
-
-            q = Question(qText, aText, correctAnswer, description, specificIA, ia, cluster)
-            questionsList.append(q)
-            print("question: ", q.question)
-            for i, a in enumerate(q.answers):
-                print(f"answer {i}: ", a)
-            print("correctAnswer: ", q.correctAnswer)
-            print("specificIA: ", q.specificIA)
-            print("description: ", q.description)
-            print("ia: ", q.ia)
-            print("cluster: ", q.cluster)
-            print("\n\n")
+            exam = parse_pdf(pdf, args.cluster)
         except Exception as e:
-            print("error on question: ", question)
-            print(e)
-            print("\n\n")
+            print(f"FAILED   {pdf.name}: {e}")
             continue
+        status = "parsed  "
+        if engine:
+            with engine.begin() as conn:
+                status = "imported" if import_exam(conn, pdf.name, exam) else "skipped "
+        print(f"{status} {pdf.name}: {len(exam.questions)} questions ({exam.cluster}), {len(exam.warnings)} warnings")
+        for w in exam.warnings:
+            print(f"         - {w}")
 
-    # add everything to database below
 
-    with pool.connect() as db_conn:
-        if not db_conn.execute(sqlalchemy.text("SELECT 1 FROM exam_sets WHERE cluster = :cluster AND exam_name = :exam_name"), {"cluster": cluster, "exam_name": exam_name}).fetchone():
-            result = db_conn.execute(
-                sqlalchemy.text("INSERT INTO exam_sets (cluster, exam_name) VALUES (:cluster, :exam_name)"),
-                {"cluster": cluster, "exam_name": exam_name}
-            )
-            examset_id = result.lastrowid
-
-            for q in questionsList:
-                existing = db_conn.execute(
-                    sqlalchemy.text("SELECT 1 FROM questions WHERE question = :question LIMIT 1"),
-                    {"question": q.question}
-                ).fetchone()
-                if existing:
-                    print("wowee this is a duplicate question \n", q.question)
-                db_conn.execute(
-                    sqlalchemy.text("""
-                        INSERT INTO questions 
-                        (question, answera, answerb, answerc, answerd, correct_answer, description, specificIA, ia, cluster, examset_id)
-                        VALUES (:question, :a, :b, :c, :d, :correctAnswer, :description, :specificIA, :ia, :cluster, :examset_id)
-                    """),
-                    {
-                        "question": q.question,
-                        "a": q.answers[0],
-                        "b": q.answers[1],
-                        "c": q.answers[2],
-                        "d": q.answers[3],
-                        "correctAnswer": q.correctAnswer,
-                        "specificIA": q.specificIA,
-                        "description": q.description,
-                        "ia": q.ia,
-                        "cluster": q.cluster,
-                        "examset_id": examset_id
-                    }
-                )
-
-            db_conn.commit()
-    print("done with ", exam_name)
+if __name__ == "__main__":
+    main()
